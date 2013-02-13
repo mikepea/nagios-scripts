@@ -1,8 +1,10 @@
 #!/usr/bin/env ruby
 
+require "rubygems"
 require "optparse"
 require "rest-client"
 require "json"
+require "pp"
 
 EXIT_OK = 0
 EXIT_WARNING = 1
@@ -25,6 +27,10 @@ optparse = OptionParser.new do |opts|
   @@options[:duration] = 5
   opts.on("-d", "--duration LENGTH", "Length, in minute of data to parse (default: 5)") do |duration|
     @@options[:duration] = duration
+  end
+  @@options[:individual] = false
+  opts.on("-i", "--individual", "Check warning/critical against each returned target, rather than on total") do |individual|
+    @@options[:individual] = individual
   end
   @@options[:warning] = nil
   opts.on("-w", "--warning VALUE", "Warning threshold") do |warning|
@@ -56,6 +62,9 @@ end
 
 data = {}
 data["total"] = 0
+data["extra_output"] = ""
+data["warning_count"] = 0
+data["critical_count"] = 0
 
 JSON.parse(RestClient.get(url)).each do |cache|
   data["#{cache['target']}"] = 0
@@ -67,32 +76,71 @@ JSON.parse(RestClient.get(url)).each do |cache|
     end
   end
   data["#{cache['target']}"] /= count
+  val = data["#{cache['target']}"]
+  if (@@options[:individual])
+
+    if (@@options[:critical].to_i >= @@options[:warning].to_i)
+      if ( val >= @@options[:critical].to_i )
+         data["critical_count"] += 1
+         data["extra_output"] += "#{cache['target']} critical at #{val}\n"
+      elsif ( data["#{cache['target']}"] >= @@options[:warning].to_i )
+         data["warning_count"] += 1
+         data["extra_output"] += "#{cache['target']} warning at #{val}\n"
+      end
+    else
+      if ( val <= @@options[:critical].to_i )
+         data["critical_count"] += 1
+         data["extra_output"] += "#{cache['target']} critical at #{val}\n"
+      elsif ( data["#{cache['target']}"] <= @@options[:warning].to_i )
+         data["warning_count"] += 1
+         data["extra_output"] += "#{cache['target']} warning at #{val}\n"
+      end
+    end
+
+  end
   data["total"] += data["#{cache['target']}"]
 end
 
+#pp data
+
 total = data["total"].to_i
 
-if (@@options[:critical].to_i > @@options[:warning].to_i)
-  if (total >= @@options[:critical].to_i)
-    puts "CRITICAL metric count: #{total}"
-    exit EXIT_CRITICAL
-  elsif (total >= @@options[:warning].to_i)
-    puts "WARNING metric count: #{total}"
-    exit EXIT_WARNING
-  else
-    puts "OK metric count: #{total}"
-    exit EXIT_OK
-  end
+if (@@options[:individual]) 
+    if data["critical_count"] > 0 
+      puts "CRITICAL individual metric count: #{data["critical_count"]}"
+      puts data["extra_output"]
+      exit EXIT_CRITICAL
+    elsif data["warning_count"] > 0 
+      puts "WARNING individual metric count: #{data["warning_count"]}"
+      puts data["extra_output"]
+      exit EXIT_WARNING
+    else
+      puts "OK metric count: #{total}"
+      exit EXIT_OK
+    end
+
 else
-  if (total <= @@options[:critical].to_i)
-    puts "CRITICAL metric count: #{total}"
-    exit EXIT_CRITICAL
-  elsif (total <= @@options[:warning].to_i)
-    puts "WARNING metric count: #{total}"
-    exit EXIT_WARNING
+  if (@@options[:critical].to_i > @@options[:warning].to_i)
+    if (total >= @@options[:critical].to_i)
+      puts "CRITICAL metric count: #{total}"
+      exit EXIT_CRITICAL
+    elsif (total >= @@options[:warning].to_i)
+      puts "WARNING metric count: #{total}"
+      exit EXIT_WARNING
+    else
+      puts "OK metric count: #{total}"
+      exit EXIT_OK
+    end
   else
-    puts "OK metric count: #{total}"
-    exit EXIT_OK
+    if (total <= @@options[:critical].to_i)
+      puts "CRITICAL metric count: #{total}"
+      exit EXIT_CRITICAL
+    elsif (total <= @@options[:warning].to_i)
+      puts "WARNING metric count: #{total}"
+      exit EXIT_WARNING
+    else
+      puts "OK metric count: #{total}"
+      exit EXIT_OK
+    end
   end
 end
-
