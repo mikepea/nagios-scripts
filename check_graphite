@@ -75,7 +75,7 @@ JSON.parse(RestClient.get(url)).each do |cache|
       count += 1
     end
   end
-  data["#{cache['target']}"] /= count
+  data["#{cache['target']}"] /= count unless count == 0
   val = data["#{cache['target']}"]
   if (@@options[:individual])
 
